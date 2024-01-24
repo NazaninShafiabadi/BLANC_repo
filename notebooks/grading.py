@@ -10,13 +10,12 @@ en_fr_ds = pd.DataFrame(en_fr_ds['translation'])
 en_fr_ds = en_fr_ds[en_fr_ds["en"].str.split().str.len() > 10]
 en_fr_ds = en_fr_ds[en_fr_ds["fr"].str.split().str.len() > 10]
 
-en_fr_ds = en_fr_ds[:3]
+en_fr_ds = en_fr_ds[:300]
 
 en_fr_ds[grader] = -1
 
 
 for index, row in en_fr_ds.iterrows():
-    print(index, row)
     print("sentence: ", row["fr"])
     print("translation:", row["en"])
     print("input grade: ")
