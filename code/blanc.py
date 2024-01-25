@@ -1,12 +1,33 @@
+from datasets import Dataset
 import torch
 import nltk
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
 import regex as re
 import unicodedata
 import json
+import random
+
+from transformers import BertForMaskedLM, TrainingArguments, Trainer
 
 nltk.download('punkt')
+
+SEED = 42
+random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
+
+
+class CustomDataCollator:
+    def __init__(self, tokenizer):
+        self.tokenizer = tokenizer
+
+    def __call__(self, examples):
+        input_ids = torch.tensor([example['input_ids'] for example in examples])
+        labels = torch.tensor([example['labels'] for example in examples])
+
+        input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id)
+        labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=-100)  # -100 is the default index to ignore in the loss function of the Trainer
+
+        return {'input_ids': input_ids, 'labels': labels}
 
 
 def preprocess_text(text: str) -> str:
@@ -35,6 +56,30 @@ def preprocess_text(text: str) -> str:
      # removing spaces at beginning and end of string.
 
      return text
+
+
+def tune_model(tune_set, model, tokenizer, n_epochs):
+
+    training_args = TrainingArguments(
+        f"finetuned-model",
+        evaluation_strategy = "no",
+        learning_rate = 1e-4,
+        weight_decay = 0.01,
+        num_train_epochs = n_epochs,
+        )
+
+    data_collator = CustomDataCollator(tokenizer)
+
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=tune_set,
+        data_collator=data_collator,
+        )
+
+    trainer.train()
+
+    return model
 
 
 def mask_sentence(sentence, mask_token, i, M, L_min):
@@ -196,6 +241,89 @@ def BLANC_help_translation(sentence, translation, model, tokenizer, M=6, L_min=4
         B = (S[0][1] - S[1][0]) / (S[0][0] + S[1][1] + S[0][1] + S[1][0])
 
     return B
+
+
+def BLANC_tune_inference(sentence, model, model_tuned, tokenizer, p_mask=0.15, L_min=4, device='cpu'):
+    """
+    Compares the performance of a model fine-tuned on the 'translation' vs. a model that has never seen the translation.
+
+    Parameters:
+    - sentence (List[str]): A tokenized sentence.
+    - model: BERT-type model
+    - model_tuned: The fine-tuned model.
+    - tokenizer: The tokenizer associated with the model used.
+    - p_mask (float): Probability of masking (default is 0.15).
+    - L_min (int): Minimum length requirement for masked words (default is 4).
+
+    Returns:
+    - float: BLANC_tune score showing the quality of the translation.
+    """
+
+    S = [[0, 0], [0, 0]]
+    M = int(1/p_mask)
+
+    for i in range(M):
+
+        masked_sentence = mask_sentence(sentence, tokenizer.mask_token, i, M, L_min)
+        masked_sentence_ids = torch.tensor(tokenizer.convert_tokens_to_ids(masked_sentence)).to(device) # Shape: [sequence_length]
+
+        out_base = model(input_ids=masked_sentence_ids.unsqueeze(0)).logits  # Shape: [1, sequence_length, Bert_vocab_size]
+        out_tune = model_tuned(input_ids=masked_sentence_ids.unsqueeze(0)).logits  # Shape: [1, sequence_length, Bert_vocab_size]
+
+        out_base = torch.argmax(out_base.squeeze(0), dim=-1)  # Shape: [sequence_length]
+        out_tune = torch.argmax(out_tune.squeeze(0), dim=-1)  # Shape: [sequence_length]
+
+        masked_tokens = [idx for idx, word in enumerate(masked_sentence) if word == tokenizer.mask_token]
+
+        for j in masked_tokens:
+            predicted_word_base = tokenizer.convert_ids_to_tokens(out_base[j].item())
+            predicted_word_tune = tokenizer.convert_ids_to_tokens(out_tune[j].item())
+
+            k = int(predicted_word_base == sentence[j])
+            m = int(predicted_word_tune == sentence[j])
+            S[k][m] += 1
+
+    B = (S[0][1] - S[1][0]) / (S[0][0] + S[1][1] + S[0][1] + S[1][0])
+
+    return B
+
+
+def BLANC_tune_translation(sentence, translation, model_checkpoint, model, tokenizer, p_mask=0.15, L_min=4, N=10, n_epochs=3, device='cpu'):
+
+    # Model tuning
+    N_words = len(translation)
+    N_mask = int(N_words * p_mask)
+    set_tune = Dataset.from_dict({})
+
+    translation_ids = tokenizer.convert_tokens_to_ids(translation)
+
+    for _ in range(N):
+        pos = [i for i, token in enumerate(translation)
+               if (len(token) >= L_min
+                   or token.startswith('##')
+                   or translation[min(i+1, len(translation)-1)].startswith('##'))] # positions of words longer than Lmin
+        random.shuffle(pos)
+        while len(pos) != 0:
+            # Mask words in next N_mask positions
+            masked_translation = translation_ids.copy()
+            for pos_to_mask in pos[:N_mask]:
+                masked_translation[pos_to_mask] = tokenizer.mask_token_id
+            # Add translation with masked words to set_tune
+            set_tune = set_tune.add_item({"input_ids": masked_translation, 'labels': translation_ids})
+            pos = pos[N_mask:]
+
+    # Creating a fresh pre-trained model
+    new_model = BertForMaskedLM.from_pretrained(model_checkpoint).to(device)
+    model_tuned = tune_model(set_tune, new_model, tokenizer, n_epochs)
+
+    # Comparing inference with model vs. model_tuned
+    score = BLANC_tune_inference(sentence, model, model_tuned, tokenizer, p_mask, L_min, device)
+
+    del new_model
+    del model_tuned
+    torch.cuda.empty_cache()
+
+    return score
 
 
 def add_results_to_json(new_data, file_path = "./results.json"):
