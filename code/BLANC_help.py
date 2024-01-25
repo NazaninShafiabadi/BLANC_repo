@@ -76,8 +76,10 @@ def BLANC_help_summary(text, summary, model, tokenizer, M=6, L_min=4, sep='[SEP]
     score = torch.zeros(1).to(device)[0]
 
     for sentence in text:
+
         if no_copy_guard(sentence, summary): 
            continue
+
         for i in range(M):
             masked_sentence = mask_sentence(sentence, tokenizer.mask_token, i, M, L_min)
 
@@ -110,7 +112,6 @@ def BLANC_help_summary(text, summary, model, tokenizer, M=6, L_min=4, sep='[SEP]
                     predicted_sentence_help = tokenizer.convert_tokens_to_ids(masked_sentence)
                     predicted_sentence_help[j] = out_help[idx].item()
 
-
                     tokenized_sentence = masked_sentence.copy()
                     tokenized_sentence[j] = sentence[j]
                     tokenized_sentence = tokenizer.convert_tokens_to_ids(tokenized_sentence)
@@ -118,14 +119,14 @@ def BLANC_help_summary(text, summary, model, tokenizer, M=6, L_min=4, sep='[SEP]
                     with torch.no_grad():
                         word_sim_input = torch.stack([torch.tensor(predicted_sentence_base), torch.tensor(predicted_sentence_help), torch.tensor(tokenized_sentence)]).to(device)
                         word_sim_out = word_sim_model(word_sim_input)
-                        predicted_sentence_base_embedding = word_sim_out.last_hidden_state[0, j, :]
-                        predicted_sentence_help_embedding = word_sim_out.last_hidden_state[1, j, :]
+                        predicted_base_embedding = word_sim_out.last_hidden_state[0, j, :]
+                        predicted_help_embedding = word_sim_out.last_hidden_state[1, j, :]
                         correct_embedding = word_sim_out.last_hidden_state[2, j, :]
 
                     cos_sim = torch.nn.CosineSimilarity(dim=0)
                     
-                    sim_base = cos_sim(predicted_sentence_base_embedding, correct_embedding)
-                    sim_help = cos_sim(predicted_sentence_help_embedding, correct_embedding)
+                    sim_base = cos_sim(predicted_base_embedding, correct_embedding)
+                    sim_help = cos_sim(predicted_help_embedding, correct_embedding)
 
                     k = int(sim_base > 0.98)
                     m = int(sim_help > 0.98)
