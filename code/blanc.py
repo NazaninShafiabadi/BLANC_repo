@@ -483,17 +483,19 @@ def BLANC_tune_summary(
             pos = pos[N_mask:]
 
     # Creating a fresh pre-trained model
-    new_model = BertForMaskedLM.from_pretrained(model_checkpoint).to(device)
-    model_tuned = tune_model(set_tune, new_model, tokenizer, n_epochs)
+    if len(set_tune) > 0:
+        new_model = BertForMaskedLM.from_pretrained(model_checkpoint).to(device)
+        model_tuned = tune_model(set_tune, new_model, tokenizer, n_epochs)
 
-    # Comparing inference with model vs. model_tuned
-    score = BLANC_tune_summary_inference(
-        text, model, model_tuned, tokenizer, p_mask, L_min, device
-    )
+        # Comparing inference with model vs. model_tuned
+        score = BLANC_tune_summary_inference(text, model, model_tuned, tokenizer, p_mask, L_min, device)
 
-    del new_model
-    del model_tuned
-    torch.cuda.empty_cache()
+        del new_model
+        del model_tuned
+        torch.cuda.empty_cache()
+        
+    else:
+        score = 0.0
 
     return score
 
@@ -540,17 +542,19 @@ def BLANC_tune_translation(
             pos = pos[N_mask:]
 
     # Creating a fresh pre-trained model
-    new_model = BertForMaskedLM.from_pretrained(model_checkpoint).to(device)
-    model_tuned = tune_model(set_tune, new_model, tokenizer, n_epochs)
+    if len(set_tune) > 0:
+        new_model = BertForMaskedLM.from_pretrained(model_checkpoint).to(device)
+        model_tuned = tune_model(set_tune, new_model, tokenizer, n_epochs)
 
-    # Comparing inference with model vs. model_tuned
-    score = BLANC_tune_translation_inference(
-        sentence, model, model_tuned, tokenizer, p_mask, L_min, device
-    )
+        # Comparing inference with model vs. model_tuned
+        score = BLANC_tune_translation_inference(sentence, model, model_tuned, tokenizer, p_mask, L_min, device)
 
-    del new_model
-    del model_tuned
-    torch.cuda.empty_cache()
+        del new_model
+        del model_tuned
+        torch.cuda.empty_cache()
+        
+    else:
+        score = 0.0
 
     return score
 
