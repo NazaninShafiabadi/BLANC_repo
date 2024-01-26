@@ -432,6 +432,10 @@ def BLANC_tune_translation_inference(
             predicted_word_base = tokenizer.convert_ids_to_tokens(out_base[j].item())
             predicted_word_tune = tokenizer.convert_ids_to_tokens(out_tune[j].item())
 
+            # print(f'predicted_word_base[{j}]: {predicted_word_base}')
+            # print(f'predicted_word_help[{j}]: {predicted_word_tune}')
+            # print(f'sentence[{j}]: {sentence[j]}')
+
             k = int(predicted_word_base == sentence[j])
             m = int(predicted_word_tune == sentence[j])
             S[k][m] += 1
@@ -481,7 +485,6 @@ def BLANC_tune_summary(
                 {"input_ids": masked_summary, "labels": summary_ids}
             )
             pos = pos[N_mask:]
-
     # Creating a fresh pre-trained model
     if len(set_tune) > 0:
         new_model = BertForMaskedLM.from_pretrained(model_checkpoint).to(device)
@@ -514,7 +517,7 @@ def BLANC_tune_translation(
 ):
     # Model tuning
     N_words = len(translation)
-    N_mask = int(N_words * p_mask)
+    N_mask = max(int(N_words * p_mask), 1) # in case the sentence is too short
     set_tune = Dataset.from_dict({})
 
     translation_ids = tokenizer.convert_tokens_to_ids(translation)
@@ -540,19 +543,16 @@ def BLANC_tune_translation(
                 {"input_ids": masked_translation, "labels": translation_ids}
             )
             pos = pos[N_mask:]
-
     # Creating a fresh pre-trained model
     if len(set_tune) > 0:
         new_model = BertForMaskedLM.from_pretrained(model_checkpoint).to(device)
         model_tuned = tune_model(set_tune, new_model, tokenizer, n_epochs)
-
         # Comparing inference with model vs. model_tuned
         score = BLANC_tune_translation_inference(sentence, model, model_tuned, tokenizer, p_mask, L_min, device)
 
         del new_model
         del model_tuned
-        torch.cuda.empty_cache()
-        
+        torch.cuda.empty_cache()  
     else:
         score = 0.0
 
