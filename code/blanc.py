@@ -1,12 +1,13 @@
-from datasets import Dataset
-import torch
-import nltk
-import regex as re
-import unicodedata
 import json
 import random
+import re
+import unicodedata
 
+from datasets import Dataset
+import nltk
+import torch
 from transformers import BertForMaskedLM, TrainingArguments, Trainer
+
 
 nltk.download("punkt")
 
@@ -432,10 +433,6 @@ def BLANC_tune_translation_inference(
             predicted_word_base = tokenizer.convert_ids_to_tokens(out_base[j].item())
             predicted_word_tune = tokenizer.convert_ids_to_tokens(out_tune[j].item())
 
-            # print(f'predicted_word_base[{j}]: {predicted_word_base}')
-            # print(f'predicted_word_help[{j}]: {predicted_word_tune}')
-            # print(f'sentence[{j}]: {sentence[j]}')
-
             k = int(predicted_word_base == sentence[j])
             m = int(predicted_word_tune == sentence[j])
             S[k][m] += 1
@@ -445,9 +442,9 @@ def BLANC_tune_translation_inference(
     return B
 
 
-def BLANC_tune_summary(
-    text,
-    summary,
+def BLANC_tune(
+    document,
+    helper,
     model_checkpoint,
     model,
     tokenizer,
@@ -456,107 +453,82 @@ def BLANC_tune_summary(
     N=10,
     n_epochs=3,
     device="cpu",
+    is_translation=False,
 ):
+    """
+    Fine-tunes a pre-trained language model for either summary or translation task and
+    computes the BLANC score.
+
+    Parameters:
+    - document (tokenized text/sentence): The input document for the task.
+    - helper (List[str]): List of tokens representing either the summary or translation.
+    - model_checkpoint (str): Path or identifier of the pre-trained language model checkpoint.
+    - model: Pre-trained language model instance.
+    - tokenizer: Tokenizer corresponding to the pre-trained language model.
+    - p_mask (float, optional): Proportion of words to mask during tuning. Default is 0.15.
+    - L_min (int, optional): Minimum length of eligible words for masking. Default is 4.
+    - N (int, optional): Number of times to apply masking and create training samples. Default is 10.
+    - n_epochs (int, optional): Number of epochs for fine-tuning the language model. Default is 3.
+    - device (str, optional): Device to use for fine-tuning. Default is "cpu".
+    - is_translation (bool, optional): If True, the task is translation; otherwise, it's a summary task. Default is False.
+
+    Returns:
+    - float: The computed BLANC score after fine-tuning and inference.
+    """
     # Model tuning
-    N_words = len(summary)
-    N_mask = int(N_words * p_mask)
+    N_words = len(helper)
+    N_mask = max(int(N_words * p_mask), 1)  # in case the data is too short
     set_tune = Dataset.from_dict({})
 
-    summary_ids = tokenizer.convert_tokens_to_ids(summary)
+    helper_ids = tokenizer.convert_tokens_to_ids(helper)
 
     for _ in range(N):
+        # pos = positions of "eligible" words for masking
         pos = [
             i
-            for i, token in enumerate(summary)
+            for i, token in enumerate(helper)
             if (
                 len(token) >= L_min
                 or token.startswith("##")
-                or summary[min(i + 1, len(summary) - 1)].startswith("##")
+                or helper[min(i + 1, len(helper) - 1)].startswith("##")
             )
-        ]  # positions of words longer than Lmin
+        ]
         random.shuffle(pos)
         while len(pos) != 0:
             # Mask words in next N_mask positions
-            masked_summary = summary_ids.copy()
+            masked_helper = helper_ids.copy()
             for pos_to_mask in pos[:N_mask]:
-                masked_summary[pos_to_mask] = tokenizer.mask_token_id
-            # Add translation with masked words to set_tune
+                masked_helper[pos_to_mask] = tokenizer.mask_token_id
+            # Add data with masked words to set_tune
             set_tune = set_tune.add_item(
-                {"input_ids": masked_summary, "labels": summary_ids}
+                {"input_ids": masked_helper, "labels": helper_ids}
             )
             pos = pos[N_mask:]
+
     # Creating a fresh pre-trained model
     if len(set_tune) > 0:
         new_model = BertForMaskedLM.from_pretrained(model_checkpoint).to(device)
         model_tuned = tune_model(set_tune, new_model, tokenizer, n_epochs)
 
         # Comparing inference with model vs. model_tuned
-        score = BLANC_tune_summary_inference(text, model, model_tuned, tokenizer, p_mask, L_min, device)
+        if is_translation:
+            score = BLANC_tune_translation_inference(
+                document, model, model_tuned, tokenizer, p_mask, L_min, device
+            )
+        else:
+            score = BLANC_tune_summary_inference(
+                document, model, model_tuned, tokenizer, p_mask, L_min, device
+            )
 
         del new_model
         del model_tuned
         torch.cuda.empty_cache()
-        
+
     else:
         score = 0.0
 
     return score
 
-
-def BLANC_tune_translation(
-    sentence,
-    translation,
-    model_checkpoint,
-    model,
-    tokenizer,
-    p_mask=0.15,
-    L_min=4,
-    N=10,
-    n_epochs=3,
-    device="cpu",
-):
-    # Model tuning
-    N_words = len(translation)
-    N_mask = max(int(N_words * p_mask), 1) # in case the sentence is too short
-    set_tune = Dataset.from_dict({})
-
-    translation_ids = tokenizer.convert_tokens_to_ids(translation)
-
-    for _ in range(N):
-        pos = [
-            i
-            for i, token in enumerate(translation)
-            if (
-                len(token) >= L_min
-                or token.startswith("##")
-                or translation[min(i + 1, len(translation) - 1)].startswith("##")
-            )
-        ]  # positions of words longer than Lmin
-        random.shuffle(pos)
-        while len(pos) != 0:
-            # Mask words in next N_mask positions
-            masked_translation = translation_ids.copy()
-            for pos_to_mask in pos[:N_mask]:
-                masked_translation[pos_to_mask] = tokenizer.mask_token_id
-            # Add translation with masked words to set_tune
-            set_tune = set_tune.add_item(
-                {"input_ids": masked_translation, "labels": translation_ids}
-            )
-            pos = pos[N_mask:]
-    # Creating a fresh pre-trained model
-    if len(set_tune) > 0:
-        new_model = BertForMaskedLM.from_pretrained(model_checkpoint).to(device)
-        model_tuned = tune_model(set_tune, new_model, tokenizer, n_epochs)
-        # Comparing inference with model vs. model_tuned
-        score = BLANC_tune_translation_inference(sentence, model, model_tuned, tokenizer, p_mask, L_min, device)
-
-        del new_model
-        del model_tuned
-        torch.cuda.empty_cache()  
-    else:
-        score = 0.0
-
-    return score
 
 
 def add_results_to_json(new_data, file_path="./results.json"):
