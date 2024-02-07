@@ -4,6 +4,13 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+matplotlib = "*"
+pandas = "*"
+datasets = "*"
+scipy = "*"
+nltk = "*"
+torch = "==2.1.2"
+transformers = "*"
 
 [dev-packages]
 ipykernel = "*"
