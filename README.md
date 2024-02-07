@@ -18,15 +18,14 @@ In this project, we propose a novel application of BLANC for translation quality
 
 ## Running the Program
 
-To run the code, you need to create a new virtual environment and install the dependencies listed in the `requirements.txt` file. On Linux or Mac, you can do this with the following commands:
+To run the program, you need to have [Pipenv] installed on your system. Pipenv is a tool that manages Python dependencies and virtual environments.
 
-```
-python -m venv env
-source env/bin/activate
-pip install -r requirements.txt
-```
+Follow these steps to run the program:
 
-Then, you can open the Jupyter notebooks and run the cells one by one to reproduce the `results.json` file.
+1. Clone this repository to your local machine.
+2. Navigate to the project directory and run `pipenv shell` to create and activate a virtual environment.
+3. Run `pipenv install` to install all the dependencies from the Pipfile.
+4. Open the Jupyter notebooks and execute the cells sequentially to reproduce the `results.json` file.
 
 ## Limitations and Future Directions 
 
