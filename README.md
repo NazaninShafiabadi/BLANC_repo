@@ -14,7 +14,7 @@ Translation quality estimation plays a crucial role in various applications, ens
 
 ## Description
 
-In this project, we propose a novel application of BLANC for translation quality estimation. While our method is language-agnostic, we have conducted evaluations primarily on English-to-French and English-to-Persian translation pairs. This choice was motivated by our familiarity with these languages, rather than any specific targeting of language pairs. BLANC evaluates the performance boost of a pre-trained language model when provided with a summary or translation of a document. Unlike traditional methods, BLANC does not rely on human references, enhancing its applicability across diverse linguistic contexts.
+In this project, we propose a novel application of BLANC for translation quality estimation. While our method is language-agnostic, we have conducted evaluations primarily on English-to-French and English-to-Persian translation pairs. This choice was motivated by our familiarity with these languages, rather than any specific targeting of language pairs. BLANC evaluates the performance boost of a pre-trained language model carrying out its language understanding task on a document, when provided with a summary or translation of the document. Unlike traditional methods, BLANC does not rely on human references, enhancing its applicability across diverse linguistic contexts.
 
 ## Running the Program
 
